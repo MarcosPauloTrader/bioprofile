@@ -281,6 +281,7 @@ function Recrutador({onExit}){
   const [sel,setSel]=useState(null); const [loadErr,setLoadErr]=useState(""); const [showInt,setShowInt]=useState(false);
   const [gemini,setGemini]=useState(""); const [jqtd,setJqtd]=useState("0"); const [jobs,setJobs]=useState("");
   const [fp,setFp]=useState(""); const [fc,setFc]=useState(""); const [fcl,setFcl]=useState(""); const [fan,setFan]=useState("");
+  const [trans,setTrans]=useState(""); const [mediaNome,setMediaNome]=useState(""); const [mediaPath,setMediaPath]=useState(""); const [mediaUrl,setMediaUrl]=useState(""); const [mediaErr,setMediaErr]=useState(""); const [mediaLoading,setMediaLoading]=useState(false);
   const [rhCv,setRhCv]=useState(null); const [rhCvErr,setRhCvErr]=useState(""); const [rhCvLoading,setRhCvLoading]=useState(false);
   const [report,setReport]=useState(null); const [gen,setGen]=useState(false); const [genErr,setGenErr]=useState(""); const [existing,setExisting]=useState(null);
   const wrap={maxWidth:760,margin:"0 auto",padding:"16px 16px 48px"};
@@ -290,13 +291,14 @@ function Recrutador({onExit}){
     catch(e){ setPinErr(e.message); } };
   const refreshList=async()=>{ setLoadingList(true); try{ const d=await rh("list",{senha:pin}); setList(d.list||[]);}catch(e){} finally{setLoadingList(false);} };
 
-  const openCand=async(cpf)=>{ setLoadErr(""); setReport(null); setExisting(null); setRhCv(null);
+  const openCand=async(cpf)=>{ setLoadErr(""); setReport(null); setExisting(null); setRhCv(null); setMediaErr("");
     try{ const d=await rh("detail",{senha:pin,cpf}); const scores=calcScores(d.candidato.respostas||{});
       setSel({...d,scores});
       const av=d.avaliacao||{};
       setGemini(av.resumo_entrevista||""); setJqtd(av.jusbrasil_qtd||"0"); setJobs(av.jusbrasil_obs||"");
       setFp(av.fala_persuasao!=null?String(av.fala_persuasao):""); setFc(av.fala_consistencia!=null?String(av.fala_consistencia):"");
       setFcl(av.fala_clareza!=null?String(av.fala_clareza):""); setFan(av.fala_analise||"");
+      setTrans(av.transcricao||""); setMediaNome(av.midia_nome||""); setMediaPath(av.midia_path||""); setMediaUrl(d.midia_url||"");
       if(d.laudo) setExisting(d.laudo);
     }catch(e){ setLoadErr(e.message); } };
 
@@ -308,7 +310,21 @@ function Recrutador({onExit}){
       await openCand(cpf);
     }catch(err){ setRhCvErr(err.message); } finally{ setRhCvLoading(false);} };
 
-  const saveAval=async()=>{ await rh("save_avaliacao",{senha:pin,cpf:sel.candidato.cpf,resumo_entrevista:gemini,jusbrasil_qtd:jqtd,jusbrasil_obs:jobs,fala_persuasao:fp===""?null:parseInt(fp),fala_consistencia:fc===""?null:parseInt(fc),fala_clareza:fcl===""?null:parseInt(fcl),fala_analise:fan}); };
+  const handleMedia=async(e)=>{ const f=e.target.files&&e.target.files[0]; if(!f)return; setMediaErr("");
+    if(f.size>48*1024*1024){ setMediaErr("Arquivo muito grande (máx. 48MB). Comprima o vídeo ou envie só o áudio."); e.target.value=""; return; }
+    setMediaLoading(true);
+    try{
+      const cpf=sel.candidato.cpf;
+      const safe=(f.name||"entrevista").replace(/[^a-zA-Z0-9._-]/g,"_");
+      const url=SUPA_URL+"/functions/v1/put-media?cpf="+encodeURIComponent(cpf.replace(/\D/g,""))+"&name="+encodeURIComponent(safe);
+      const r=await fetch(url,{method:"POST",headers:{"Content-Type":f.type||"application/octet-stream","x-senha":pin},body:f});
+      const d=await r.json().catch(()=>({}));
+      if(!r.ok||!d.path){ throw new Error("Falha ao enviar ("+r.status+(d.error?" "+d.error:"")+")"); }
+      await rh("save_avaliacao",{senha:pin,cpf,resumo_entrevista:gemini,jusbrasil_qtd:jqtd,jusbrasil_obs:jobs,fala_persuasao:fp===""?null:parseInt(fp),fala_consistencia:fc===""?null:parseInt(fc),fala_clareza:fcl===""?null:parseInt(fcl),fala_analise:fan,transcricao:trans,midia_nome:f.name,midia_path:d.path});
+      await openCand(cpf);
+    }catch(err){ setMediaErr(err.message); } finally{ setMediaLoading(false); e.target.value=""; } };
+
+  const saveAval=async()=>{ await rh("save_avaliacao",{senha:pin,cpf:sel.candidato.cpf,resumo_entrevista:gemini,jusbrasil_qtd:jqtd,jusbrasil_obs:jobs,fala_persuasao:fp===""?null:parseInt(fp),fala_consistencia:fc===""?null:parseInt(fc),fala_clareza:fcl===""?null:parseInt(fcl),fala_analise:fan,transcricao:trans}); };
 
   const generate=async()=>{ setGen(true); setGenErr("");
     try{
@@ -417,7 +433,24 @@ function Recrutador({onExit}){
           <div key={i} style={{flex:"1 1 150px"}}><label style={{fontSize:11,fontWeight:700,color:"var(--muted)",display:"block",marginBottom:4}}>{lab}</label>
           <input value={val} onChange={e=>{const n=e.target.value.replace(/\D/g,"").slice(0,2);if(n===""||parseInt(n)<=10)setter(n);}} inputMode="numeric" placeholder="0-10" style={{width:"100%",padding:"10px 12px",border:"2px solid var(--line)",borderRadius:8,fontSize:14,background:"var(--card)",color:"var(--ink)"}}/></div>))}
       </div>
-      <textarea value={fan} onChange={e=>setFan(e.target.value)} placeholder="Descreva a fala: fluência, vícios de linguagem, energia, se o que falou bate com o que respondeu no teste..." rows={4} style={{width:"100%",padding:"10px 14px",border:"2px solid var(--line)",borderRadius:8,fontSize:13,background:"var(--card)",color:"var(--ink)",resize:"vertical",lineHeight:1.6}}/>
+      <textarea value={fan} onChange={e=>setFan(e.target.value)} placeholder="Opcional: suas observações sobre a fala (fluência, vícios de linguagem, energia...)" rows={3} style={{width:"100%",padding:"10px 14px",border:"2px solid var(--line)",borderRadius:8,fontSize:13,background:"var(--card)",color:"var(--ink)",resize:"vertical",lineHeight:1.6,marginBottom:14}}/>
+
+      <div style={{borderTop:"1px solid var(--line)",paddingTop:14,marginBottom:14}}>
+        <div style={{fontSize:12,fontWeight:700,color:"#1E40AF",marginBottom:4}}>🎬 Vídeo ou áudio da entrevista</div>
+        <div style={{fontSize:11,color:"var(--muted)",marginBottom:10}}>Guarde o arquivo junto ao candidato (máx. 48MB). Para vídeos maiores, envie só o áudio ou comprima.</div>
+        {mediaNome&&<div style={{fontSize:13,fontWeight:600,marginBottom:8}}>✓ {mediaNome}{mediaUrl&&<span> · <a href={mediaUrl} target="_blank" rel="noreferrer" style={{fontSize:12,color:"#1D4ED8"}}>abrir ↗</a></span>}</div>}
+        <label style={{display:"inline-block",padding:"10px 16px",background:mediaLoading?"var(--line)":"#EEF2FF",color:"#4338CA",border:"2px dashed #C7D2FE",borderRadius:9,fontSize:13,fontWeight:700,cursor:mediaLoading?"wait":"pointer"}}>
+          {mediaLoading?"⏳ Enviando...":(mediaNome?"🎬 Substituir vídeo/áudio":"🎬 Importar vídeo/áudio")}
+          <input type="file" accept="video/*,audio/*" onChange={handleMedia} disabled={mediaLoading} style={{display:"none"}}/>
+        </label>
+        {mediaErr&&<div style={{marginTop:8,background:"#FFF1F2",border:"1px solid #FECDD3",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#BE123C"}}>{mediaErr}</div>}
+      </div>
+
+      <div>
+        <div style={{fontSize:12,fontWeight:700,color:"#1E40AF",marginBottom:4}}>📝 Transcrição da entrevista</div>
+        <div style={{fontSize:11,color:"var(--muted)",marginBottom:10}}>Cole a transcrição da fala do candidato. A Dra. Sofia analisa automaticamente persuasão, consistência com o teste e clareza.</div>
+        <textarea value={trans} onChange={e=>setTrans(e.target.value)} placeholder="Cole aqui a transcrição completa da entrevista (fala do candidato)..." rows={6} style={{width:"100%",padding:"10px 14px",border:"2px solid var(--line)",borderRadius:8,fontSize:13,background:"var(--card)",color:"var(--ink)",resize:"vertical",lineHeight:1.6}}/>
+      </div>
     </div>
     <div style={{marginBottom:20}}>
       <label style={{fontSize:11,fontWeight:700,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:.5}}>🎤 Resumo da Entrevista (Gemini)</label>
