@@ -109,9 +109,12 @@ async function readCV(file){
 
 // ======================= SUPABASE =======================
 async function uploadToStorage(cpf,file){
-  const safe=file.name.replace(/[^a-zA-Z0-9._-]/g,"_"); const path=cpf.replace(/\D/g,"")+"/"+Date.now()+"_"+safe;
-  const r=await fetch(SUPA_URL+"/storage/v1/object/curriculos/"+path,{method:"POST",headers:{apikey:SUPA_ANON,Authorization:"Bearer "+SUPA_ANON,"Content-Type":file.type||"application/octet-stream","x-upsert":"true"},body:file});
-  if(!r.ok) throw new Error("Falha ao enviar currículo ("+r.status+")"); return path;
+  const safe=(file.name||"cv").replace(/[^a-zA-Z0-9._-]/g,"_");
+  const url=SUPA_URL+"/functions/v1/put-cv?cpf="+encodeURIComponent(cpf.replace(/\D/g,""))+"&name="+encodeURIComponent(safe);
+  const r=await fetch(url,{method:"POST",headers:{"Content-Type":file.type||"application/octet-stream"},body:file});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok||!d.path){ throw new Error("Falha ao enviar currículo ("+r.status+(d.error?" "+d.error:"")+")"); }
+  return d.path;
 }
 async function insertCandidato(payload){
   let r=await fetch(SUPA_URL+"/rest/v1/candidatos",{method:"POST",headers:{...H,Prefer:"return=minimal"},body:JSON.stringify(payload)});
