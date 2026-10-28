@@ -114,7 +114,10 @@ async function uploadToStorage(cpf,file){
   if(!r.ok) throw new Error("Falha ao enviar currículo ("+r.status+")"); return path;
 }
 async function insertCandidato(payload){
-  const r=await fetch(SUPA_URL+"/rest/v1/candidatos",{method:"POST",headers:{...H,Prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify(payload)});
+  let r=await fetch(SUPA_URL+"/rest/v1/candidatos",{method:"POST",headers:{...H,Prefer:"return=minimal"},body:JSON.stringify(payload)});
+  if(r.status===409){ // CPF já cadastrou antes — atualiza o registro dele
+    r=await fetch(SUPA_URL+"/rest/v1/candidatos?cpf=eq."+encodeURIComponent(payload.cpf),{method:"PATCH",headers:{...H,Prefer:"return=minimal"},body:JSON.stringify(payload)});
+  }
   if(!r.ok){ const t=await r.text(); throw new Error("Falha ao salvar ("+r.status+"): "+t); }
 }
 async function rh(action,extra){
